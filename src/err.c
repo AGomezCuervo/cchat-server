@@ -1,3 +1,4 @@
+#include "main.h"
 #include <string.h>
 #include <sys/syslog.h>
 #include <syslog.h>
@@ -6,7 +7,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include "err.h"
 
 void err_doit(bool errnoflag, int level, const char *fmt, va_list ap)
 {
@@ -25,6 +25,15 @@ void err_sys(const char *fmt, ...)
  va_list ap;
  va_start(ap, fmt);
  err_doit(true, LOG_ERR, fmt, ap );
+ va_end(ap);
+ exit(1);
+}
+
+void err_buf(const char *fmt, ...)
+{
+ va_list ap;
+ va_start(ap, fmt);
+ err_doit(false, LOG_ERR, fmt, ap );
  va_end(ap);
  exit(1);
 }
