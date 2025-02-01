@@ -2,7 +2,6 @@
   {
     "arguments": [
       "/usr/bin/gcc",
-      "-std=c11",
       "-Wall",
       "-Wextra",
       "-pedantic",
@@ -18,10 +17,34 @@
       "-c",
       "-o",
       "build/main.o",
-      "main.c"
+      "src/main.c"
     ],
     "directory": "/home/agomez/Projects/cchat_server",
-    "file": "/home/agomez/Projects/cchat_server/main.c",
+    "file": "/home/agomez/Projects/cchat_server/src/main.c",
     "output": "/home/agomez/Projects/cchat_server/build/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-pedantic",
+      "-ggdb",
+      "-Wunused-function",
+      "-Wmissing-prototypes",
+      "-Wunreachable-code",
+      "-Wmissing-declarations",
+      "-Wshadow",
+      "-Wcast-align",
+      "-I/usr/include/libxml2",
+      "-Iinclude/",
+      "-c",
+      "-o",
+      "build/socket.o",
+      "src/socket.c"
+    ],
+    "directory": "/home/agomez/Projects/cchat_server",
+    "file": "/home/agomez/Projects/cchat_server/src/socket.c",
+    "output": "/home/agomez/Projects/cchat_server/build/socket.o"
   }
 ]

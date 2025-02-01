@@ -2,7 +2,6 @@
 #include <string.h>
 #include <sys/syslog.h>
 #include <syslog.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>

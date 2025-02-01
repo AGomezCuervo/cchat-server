@@ -1,5 +1,4 @@
 #include "main.h"
-#include <sys/socket.h>
 #include <unistd.h>
 
 inline int Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
@@ -31,4 +30,31 @@ inline int Listen(int fd, int backlog )
 
         return n;
 
+}
+
+inline int Close(int fd)
+{
+        int n;
+        if( (n = close(fd)) < 0)
+        {
+                err_sys("Close failed");
+        }
+
+        return n;
+}
+
+int Send(int fd, char *buf, int len)
+{
+    int total = 0;
+    int bytesleft = len;
+    int n;
+
+    while(total < len) {
+        n = send(fd, buf+total, bytesleft, 0);
+        if(n == -1) { break; }
+        total += n;
+        bytesleft -= n;
+    }
+
+    return n==-1 ? -1 : total;
 }
