@@ -2,3 +2,5 @@ server
 request.bin
 build
 cache
+nohup.out
+compile_commands.json
