@@ -14,7 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define PORT 5224
+#define PORT 5220
 #define BACK_LOG 10
 #define BUFFER_SIZE 1500
 #define DELIMITER "\r\t"
@@ -102,16 +102,21 @@ void hdl_connection(int fd, char *buffer, struct stream_conf *stream_conf)
                 stanza_buffer[bytes_read] = '\0';
 
                 char *stanza_end;
-                if( (stanza_end = strstr(stanza_buffer, "</message>")) == NULL)
+                if( (stanza_end = strstr(stanza_buffer, "<stream:stream")) == NULL)
                 {
-                        if( (stanza_end = strstr(stanza_buffer, "</stream:stream>")) == NULL)
+                        if( (stanza_end = strstr(stanza_buffer, "</message>")) == NULL)
                         {
+                                if( (stanza_end = strstr(stanza_buffer, "</stream:stream>")) == NULL)
+                                {
+                                }
                         }
                 }
 
 
                 if(stanza_end != NULL) {
                         hdl_stanza(fd, stanza_buffer, bytes_read, stream_conf);
+                } else {
+                        Send(fd, stanza_buffer, bytes_read);
                 }
         }
 }
@@ -130,7 +135,7 @@ enum Message_type hdl_stanza(int fd, char *stanza, size_t stanza_len, struct str
                 return ERROR;
         }
 
-        while( (ret = xmlTextReaderRead(reader)) < 0)
+        while( (ret = xmlTextReaderRead(reader)) == 1)
         {
                 const char *name = (const char *)xmlTextReaderConstName(reader);
                 if(name == NULL) return ERROR;
@@ -150,7 +155,8 @@ enum Message_type hdl_stanza(int fd, char *stanza, size_t stanza_len, struct str
                                         }
                                         return STREAM_STREAM;
                                 }
-                                else {
+                                else
+                                {
                                         Send(fd, stanza, stanza_len);
                                 }
                                 break;
@@ -197,14 +203,14 @@ int hdl_stream(struct stream_conf *stream_conf, xmlTextReaderPtr reader)
                         if((strcmp(attr_name, "version")) == 0)
                         {
                                 memcpy(stream_conf->version, attr_value, attr_len);
-                                stream_conf->version[MAX_VALUE - 1] = '\0';
+                                stream_conf->version[16 - 1] = '\0';
                                 continue;
                         }
 
                         if((strcmp(attr_name, "xml:lang")) == 0)
                         {
                                 memcpy(stream_conf->xml_lang, attr_value, attr_len);
-                                stream_conf->xml_lang[MAX_VALUE - 1] = '\0';
+                                stream_conf->xml_lang[16 - 1] = '\0';
                                 continue;
                         }
 
@@ -222,10 +228,10 @@ int hdl_stream(struct stream_conf *stream_conf, xmlTextReaderPtr reader)
                                 continue;
                         }
 
-                        create_stream_id(stream_conf, MAX_VALUE - 1);
                         return ERROR;
                 }
         }
+        create_stream_id(stream_conf, MAX_VALUE - 1);
         return 0;
 }
 
@@ -256,7 +262,7 @@ int init_connection(int fd, struct stream_conf *stream_conf)
         stream_conf->xmlns_stream
     );
 
-    bytes_write = Send(fd, stream_header, sizeof(stream_header));
+    bytes_write = Send(fd, stream_header, strlen(stream_header));
 
     if(bytes_write < 0)
     {
