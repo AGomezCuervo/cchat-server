@@ -20,24 +20,20 @@
 #define DELIMITER "\r\t"
 
 // TODO: handle error on connection lost
-
-enum Message_type {
-        STREAM_STREAM,
-        MESSAGE,
-        ERROR = -1,
-};
+// TODO: Implement TLS before XMPP
+// TODO: Implement SASL before XMPP
+// TODO: Implement error Handling
 
 int child_pid;
 int server_fd;
-
 int connection;
 
 // Prototypes
-void hdl_connection(int client_fd, char *buffer, struct stream_conf *stream_conf);
+void init_connection(int client_fd, char *buffer, struct stream_conf *stream_conf);
 void create_stream_id(struct stream_conf *stream_conf, size_t len);
-int init_connection(int fd, struct stream_conf *stream_conf);
-enum Message_type hdl_stanza( int fd, char *stanza, size_t stanza_len, struct stream_conf *stream_conf);
-int hdl_stream(struct stream_conf *stream_conf, xmlTextReaderPtr reader);
+int init_xmpp(int fd, struct stream_conf *stream_conf);
+int hdl_stanza( int fd, char *stanza, size_t stanza_len, struct stream_conf *stream_conf);
+int hdl_stream_stanza(struct stream_conf *stream_conf, xmlTextReaderPtr reader);
 
 int main(void)
 {
@@ -82,7 +78,7 @@ int main(void)
                         char buffer[BUFF_LEN];
 
                         printf("Client connected\n");
-                        hdl_connection(client_fd, buffer, &stream_conf);
+                        init_connection(client_fd, buffer, &stream_conf);
                         Close(client_fd);
                         exit(0);
                 }
@@ -91,38 +87,30 @@ int main(void)
         return 0;
 }
 
-void hdl_connection(int fd, char *buffer, struct stream_conf *stream_conf)
+void init_connection(int fd, char *buffer, struct stream_conf *stream_conf)
 {
         ssize_t bytes_read;
-        char stanza_buffer[BUFF_LEN];
+        char use_buffer[BUFF_LEN];
 
         while ( (bytes_read = recv(fd, buffer, BUFF_LEN - 1, 0)) > 0)
         {
-                memcpy(stanza_buffer, buffer, bytes_read );
-                stanza_buffer[bytes_read] = '\0';
+                memcpy(use_buffer, buffer, bytes_read);
+                use_buffer[bytes_read] = '\0';
 
                 char *stanza_end;
-                if( (stanza_end = strstr(stanza_buffer, "<stream:stream")) == NULL)
+                if( (stanza_end = strstr(use_buffer, "\r\t")) == NULL)
                 {
-                        if( (stanza_end = strstr(stanza_buffer, "</message>")) == NULL)
-                        {
-                                if( (stanza_end = strstr(stanza_buffer, "</stream:stream>")) == NULL)
-                                {
-                                }
-                        }
-                }
-
-
-                if(stanza_end != NULL) {
-                        hdl_stanza(fd, stanza_buffer, bytes_read, stream_conf);
-                } else {
-                        Send(fd, stanza_buffer, bytes_read);
+                        char* err_msg = "Error";
+                        Send(fd, err_msg, strlen(err_msg));
+                } else
+                {
+                        hdl_stanza(fd, use_buffer, bytes_read, stream_conf);
                 }
         }
 }
 
 
-enum Message_type hdl_stanza(int fd, char *stanza, size_t stanza_len, struct stream_conf *stream_conf)
+int hdl_stanza(int fd, char *stanza, size_t stanza_len, struct stream_conf *stream_conf)
 {
         xmlTextReaderPtr reader;
         int ret;
@@ -132,28 +120,33 @@ enum Message_type hdl_stanza(int fd, char *stanza, size_t stanza_len, struct str
         if(reader == NULL)
         {
                 err_buf("failed to create reader");
-                return ERROR;
+                return -1;
         }
 
         while( (ret = xmlTextReaderRead(reader)) == 1)
         {
                 const char *name = (const char *)xmlTextReaderConstName(reader);
-                if(name == NULL) return ERROR;
+                if(name == NULL) return -1;
 
                 int node_type = xmlTextReaderNodeType(reader);
                 switch (node_type) {
                         case XML_READER_TYPE_ELEMENT:
                                 if(strcmp(name, "stream:stream") == 0)
                                 {
-                                        if(hdl_stream(stream_conf, reader) < 0)
+                                        if(!connection)
                                         {
-                                                err_buf("stream:stream bad format");
-                                                return ERROR;
-                                        } else
-                                        {
-                                                init_connection(fd, stream_conf);
+                                                if(hdl_stream_stanza(stream_conf, reader) < 0)
+                                                {
+                                                        err_buf("stream:stream bad format");
+                                                        return -1;
+                                                } else
+                                                {
+                                                        init_xmpp(fd, stream_conf);
+                                                        return 0;
+                                                }
                                         }
-                                        return STREAM_STREAM;
+                                        err_buf("stream:stream bad format");
+                                        return -1;
                                 }
                                 else
                                 {
@@ -162,7 +155,6 @@ enum Message_type hdl_stanza(int fd, char *stanza, size_t stanza_len, struct str
                                 break;
 
                         case XML_READER_TYPE_END_ELEMENT:
-                                if(strcmp(name, "stream:stream") == 0)
                                 break;
 
                         default:
@@ -172,7 +164,7 @@ enum Message_type hdl_stanza(int fd, char *stanza, size_t stanza_len, struct str
         return 0;
 }
 
-int hdl_stream(struct stream_conf *stream_conf, xmlTextReaderPtr reader)
+int hdl_stream_stanza(struct stream_conf *stream_conf, xmlTextReaderPtr reader)
 {
         if(xmlTextReaderHasAttributes(reader))
         {
@@ -228,7 +220,7 @@ int hdl_stream(struct stream_conf *stream_conf, xmlTextReaderPtr reader)
                                 continue;
                         }
 
-                        return ERROR;
+                        return -1;
                 }
         }
         create_stream_id(stream_conf, MAX_VALUE - 1);
@@ -243,7 +235,7 @@ void create_stream_id(struct stream_conf *stream_conf, size_t len)
         snprintf(stream_conf->id, len, "%s_%ld%09ld", stream_conf->from, ts.tv_sec, ts.tv_nsec);
 }
 
-int init_connection(int fd, struct stream_conf *stream_conf)
+int init_xmpp(int fd, struct stream_conf *stream_conf)
 {
     char stream_header[2048];
     int bytes_write;
@@ -256,8 +248,8 @@ int init_connection(int fd, struct stream_conf *stream_conf)
         "version='%s' "
         "xml:lang='%s' "
         "xmlns='%s' "
-        "xmlns:stream='%s'>",
-        stream_conf->from, stream_conf->id, stream_conf->to,
+        "xmlns:stream='%s'>\r\t",
+        stream_conf->to, stream_conf->id, stream_conf->from,
         stream_conf->version, stream_conf->xml_lang, stream_conf->xmlns,
         stream_conf->xmlns_stream
     );
@@ -275,5 +267,3 @@ int init_connection(int fd, struct stream_conf *stream_conf)
             return 0;
     }
 }
-
-

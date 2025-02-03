@@ -11,6 +11,7 @@
 
 #define MAX_VALUE 256
 #define BUFF_LEN 1024
+#define SERVER_ADDR "home.com"
 
 typedef void Sigfunc(int);
 
