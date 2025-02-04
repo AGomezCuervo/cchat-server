@@ -23,6 +23,14 @@
 // TODO: Implement TLS before XMPP
 // TODO: Implement SASL before XMPP
 // TODO: Implement error Handling
+//
+//                       Current Architecture
+//
+//                        Parent(TCP:PORT)
+//                           /      \
+//                        Client   Client 
+//                           \       /
+//                        (Central process) 
 
 int child_pid;
 int server_fd;
