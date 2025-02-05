@@ -6,12 +6,14 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stdarg.h>
+#include <sys/un.h>
 #include <signal.h>
 #include <stdbool.h>
 
 #define MAX_VALUE 256
 #define BUFF_LEN 1024
 #define SERVER_ADDR "home.com"
+#define MAX_CLIENTS 200
 
 typedef void Sigfunc(int);
 

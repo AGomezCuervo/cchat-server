@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include <time.h>
@@ -16,6 +17,7 @@
 
 #define PORT 5220
 #define BACK_LOG 10
+#define CENTRAL_PATH "/tmp/xmpp_central"
 #define BUFFER_SIZE 1500
 #define DELIMITER "\r\t"
 
@@ -32,6 +34,12 @@
 //                           \       /
 //                        (Central process) 
 
+struct Client {
+        int fd;
+        char addr[100];
+};
+
+int central_pid;
 int child_pid;
 int server_fd;
 int connection;
@@ -39,6 +47,7 @@ int connection;
 // Prototypes
 void init_connection(int client_fd, char *buffer, struct stream_conf *stream_conf);
 void create_stream_id(struct stream_conf *stream_conf, size_t len);
+int init_central_process(const char *socket_path);
 int init_xmpp(int fd, struct stream_conf *stream_conf);
 int hdl_stanza( int fd, char *stanza, size_t stanza_len, struct stream_conf *stream_conf);
 int hdl_stream_stanza(struct stream_conf *stream_conf, xmlTextReaderPtr reader);
@@ -52,7 +61,6 @@ int main(void)
         client_len = sizeof(client_addr);
 
         memset(&server_addr, 0, sizeof(server_addr));
-        memset(&server_addr, 0, sizeof(server_addr));
         Signal(SIGINT, sig_exit);
 
         server_fd = Socket(AF_INET, SOCK_STREAM, 0);
@@ -65,7 +73,41 @@ int main(void)
 
         Listen(server_fd, BACK_LOG);
         Signal(SIGCHLD, sig_child);
-        printf("Server listening on port %d\n", PORT);
+        printf("Parent listening on port %d\n", PORT);
+
+        // Create central server
+        if( (central_pid = fork()) == 0)
+        {
+                Close(server_fd);
+                prctl(PR_SET_NAME, "xmpp_central", 0, 0, 0);
+
+                struct sockaddr_un child_addr;
+                socklen_t child_len;
+                int central_fd;
+                size_t connected_clients;
+                connected_clients = 0;
+
+                struct Client clients_fd[MAX_CLIENTS];
+
+                char buffer[BUFF_LEN];
+
+                central_fd = init_central_process(CENTRAL_PATH);
+
+                while(1)
+                {
+                        int client_fd;
+                        client_fd = accept(central_fd, (struct sockaddr *)&child_addr, &child_len);
+                        if(client_fd < 0)
+                        {
+                                if(errno == EINTR)
+                                        continue;
+                                else
+                                        err_sys("Failed accept");
+                        }
+                        clients_fd[connected_clients].fd = client_fd;
+                }
+
+        }
 
         while (1)
         {
@@ -93,6 +135,26 @@ int main(void)
                 Close(client_fd);
         }
         return 0;
+}
+
+int init_central_process(const char *socket_path) {
+    struct sockaddr_un central_addr;
+    int central_fd;
+
+    central_fd = Socket(AF_UNIX, SOCK_STREAM, 0);
+
+    memset(&central_addr, 0, sizeof(central_addr));
+    central_addr.sun_family = AF_UNIX;
+    strncpy(central_addr.sun_path, socket_path, sizeof(central_addr.sun_path) - 1);
+    unlink(socket_path);
+
+    Bind(central_fd, (struct sockaddr *)&central_addr, sizeof(central_addr));
+
+    Listen(central_fd, BACK_LOG);
+
+    printf("Central Process listening on socket: %s\n", socket_path);
+
+    return central_fd;
 }
 
 void init_connection(int fd, char *buffer, struct stream_conf *stream_conf)
