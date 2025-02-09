@@ -2,6 +2,7 @@
 #define MAIN_H_
 
 #include <unistd.h>
+#include <sys/epoll.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -38,6 +39,8 @@ int Send(int fd, char *buf, int len);
 int Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int Socket(int domain, int type, int protocol);
 int Listen(int fd, int backlog);
+int EpollCreate(int flag);
+int Accept(int fd, struct sockaddr *addr, socklen_t *len);
 int Close(int fd);
 Sigfunc *Signal(int sig, Sigfunc *func);
 #endif

@@ -2,6 +2,7 @@
 #include <libxml/parser.h>
 #include <libxml/xmlreader.h>
 #include <libxml/tree.h>
+#include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <string.h>
 #include <signal.h>
@@ -9,7 +10,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/socket.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include <time.h>
@@ -55,10 +55,7 @@ int hdl_stream_stanza(struct stream_conf *stream_conf, xmlTextReaderPtr reader);
 int main(void)
 {
         prctl(PR_SET_NAME, "xmpp_server", 0, 0, 0);
-        struct sockaddr_in server_addr, client_addr;
-        socklen_t client_len;
-
-        client_len = sizeof(client_addr);
+        struct sockaddr_in server_addr;
 
         memset(&server_addr, 0, sizeof(server_addr));
         Signal(SIGINT, sig_exit);
@@ -81,45 +78,68 @@ int main(void)
                 Close(server_fd);
                 prctl(PR_SET_NAME, "xmpp_central", 0, 0, 0);
 
-                struct sockaddr_un child_addr;
-                socklen_t child_len;
-                int central_fd;
+                struct epoll_event ev, events[MAX_CLIENTS];
+                int central_fd, epoll_fd;
                 size_t connected_clients;
-                connected_clients = 0;
-
                 struct Client clients_fd[MAX_CLIENTS];
+
+                connected_clients = 0;
 
                 char buffer[BUFF_LEN];
 
                 central_fd = init_central_process(CENTRAL_PATH);
+                epoll_fd = EpollCreate(0);
+                ev.events = EPOLLIN;
+                ev.data.fd = central_fd;
+
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, central_fd, &ev) == -1)
+                {
+                        err_sys("epoll_error: listen_sock");
+                }
 
                 while(1)
                 {
+                        size_t bytes_read;
                         int client_fd;
-                        client_fd = accept(central_fd, (struct sockaddr *)&child_addr, &child_len);
-                        if(client_fd < 0)
+                        int num_events = epoll_wait(epoll_fd, events, MAX_CLIENTS, -1);
+                        if(num_events < 0)
                         {
-                                if(errno == EINTR)
-                                        continue;
-                                else
-                                        err_sys("Failed accept");
+                                err_sys("failed epoll_wait");
                         }
-                        clients_fd[connected_clients].fd = client_fd;
-                }
 
+                        for(int i = 0; i < num_events; i++)
+                        {
+                                if(events[i].data.fd == central_fd)
+                                {
+                                        client_fd = Accept(central_fd, NULL, NULL);
+                                        if(client_fd < 0) continue;
+                                        printf("Central Process accepts: %d", client_fd);
+                                        ev.events = EPOLLIN;
+                                        ev.data.fd = client_fd;
+
+                                        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) == -1)
+                                        {
+                                                err_sys("epoll error: conn_fd");
+                                        }
+                                }
+                                else
+                                {
+                                        bytes_read = recv(events[i].data.fd, buffer, BUFF_LEN - 1, 0);
+                                        if(bytes_read > 0)
+                                        {
+                                                buffer[bytes_read] = '\0';
+                                                printf("%s", buffer);
+                                        }
+                                }
+                        }
+                }
         }
 
         while (1)
         {
                 int client_fd;
-                client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-                if(client_fd < 0)
-                {
-                        if(errno == EINTR)
-                                continue;
-                        else
-                                err_sys("Failed accept");
-                }
+                client_fd = Accept(server_fd, NULL, NULL);
+                if(client_fd < 0) continue;
 
                 if( (child_pid = fork()) == 0)
                 {

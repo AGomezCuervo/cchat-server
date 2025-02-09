@@ -1,4 +1,6 @@
 #include "main.h"
+#include <sys/epoll.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 inline int Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
@@ -32,6 +34,21 @@ inline int Listen(int fd, int backlog )
 
 }
 
+inline int Accept(int fd, struct sockaddr *addr, socklen_t *len)
+{
+        int conn_fd;
+        conn_fd = accept(fd, addr, len);
+        if(conn_fd < 0)
+        {
+                if(errno == EINTR)
+                        return errno;
+                else
+                        err_sys("Failed accept");
+        }
+
+        return conn_fd;
+}
+
 inline int Close(int fd)
 {
         int n;
@@ -57,4 +74,14 @@ int Send(int fd, char *buf, int len)
     }
 
     return n==-1 ? -1 : total;
+}
+
+int EpollCreate(int flag)
+{
+        int epoll_fd;
+
+        epoll_fd = epoll_create1(flag);
+        if(epoll_fd == -1)
+                err_sys("Listen failed");
+        return epoll_fd;
 }
