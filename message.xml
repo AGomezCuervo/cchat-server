@@ -1,7 +1,7 @@
-<stream:stream
-     from='juliet@im.example.com'
-     to='im.example.com'
-     version='1.0'
-     xml:lang='en'
-     xmlns='jabber:client'
-     xmlns:stream='http://etherx.jabber.org/streams'>
+<message from='juliet@im.example.com/balcony'
+         id='ju2ba41c'
+         to='romeo@example.net'
+         type='chat'
+         xml:lang='en'>
+        <body>Art thou not Romeo, and a Montague?</body>
+</message>

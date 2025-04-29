@@ -1,5 +1,4 @@
 #include "main.h"
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -82,6 +81,8 @@ int EpollCreate(int flag)
 
         epoll_fd = epoll_create1(flag);
         if(epoll_fd == -1)
+	{
                 err_sys("Listen failed");
+	}
         return epoll_fd;
 }
