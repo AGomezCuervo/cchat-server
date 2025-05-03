@@ -75,6 +75,14 @@ int Send(int fd, char *buf, int len)
     return n==-1 ? -1 : total;
 }
 
+int Epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
+{
+	if(epoll_ctl(epfd, op, fd, event) == -1)
+		err_sys("Failed epoll ctl");
+
+	return 0;
+}
+
 int EpollCreate(int flag)
 {
         int epoll_fd;

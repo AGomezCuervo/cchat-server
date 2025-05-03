@@ -1,16 +1,13 @@
 #include "main.h"
-#include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <string.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <syslog.h>
-#include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 #define PORT 5220
 #define BACK_LOG 10
@@ -36,7 +33,6 @@
 int server_fd;
 int epoll_fd;
 Pool pool = {0};
-Cnode *clients_list;
 
 // Prototypes
 int init_xmpp(int fd, struct XMPP_Client *client);
@@ -46,7 +42,8 @@ void disconnect_client(int fd, struct XMPP_Client *client);
 size_t get_response_len(const char *s, enum tag_type tag_type, struct XMPP_Client *client);
 int hdl_xml_element(struct XMPP_Client *client, const XML_Char *el_name, const XML_Char **atts);
 void hdl_xmpp_data(struct XMPP_Client *client);
-int init_client(int client_fd, struct XMPP_Client *client);
+struct XMPP_Client *create_client(int client_fd, struct XMPP_Client *client);
+int get_fd_by_name(Pool *pool, const char* name);
 
 static void XMLCALL text_element(void *userData, const XML_Char *string, int len)
 {
@@ -70,13 +67,21 @@ static void XMLCALL start_element(void *userData, const XML_Char *name, const XM
 	message->depth++;
 
 	if(strcmp(name, "message") == 0)
+	{
 		message->tag_type = MESSAGE;
+	}
 	
 	else if(strcmp(name, "stream:stream") == 0)
+	{
+		client->status = true;
 		message->tag_type = STREAM;
-	
+		message->depth--;
+	}
+
 	else if(strcmp(name, "body") == 0)
+	{
 		message->tag_type = BODY;
+	}
 
 	hdl_xml_element(client, name, atts);
 }
@@ -88,13 +93,20 @@ static void XMLCALL end_element(void *userData, const XML_Char *name)
 	client->message.depth--;
 	
 	if(strcmp("message", name) == 0)
+	{
 		client->message.tag_type = MESSAGE;
+	}
 	
 	else if(strcmp("stream", name) == 0)
+	{
 		client->message.tag_type = STREAM;
+		client->status = false;
+	}
 	
 	else
-	client->message.tag_type = NONE;
+	{
+		client->message.tag_type = NONE;
+	}
 }
 
 int main(void)
@@ -123,8 +135,7 @@ int main(void)
 	ev.events = EPOLLIN;
 	ev.data.fd = server_fd;
 
-	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == -1)
-	err_sys("epoll_error: listen_sock");
+	Epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev);
 
 	while(1)
 	{
@@ -138,35 +149,32 @@ int main(void)
 			{
 				struct XMPP_Client *client;
 				int client_fd;
-				int r;
-				
 				client = NULL;
 				
 				client_fd = Accept(server_fd, NULL, NULL);
 				if(client_fd < 0) continue;
 				
-				r = init_client(client_fd, client);
-				if(r == -1)
+				client = create_client(client_fd, client);
+				if(client == NULL)
 					break;
-				
 				
 				// Todo: Handle initial Stream
 				hdl_xmpp_data(client);
 				printf("Client connected successfully\n");
 
-				client->status = true;
-
 				struct epoll_event client_ev = {0};
-
 				client_ev.events = EPOLLIN | EPOLLERR | EPOLLHUP;
 				client_ev.data.ptr = client;
-				epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_ev);
+				Epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_ev);
 			}
 
 			else if(events[i].events & EPOLLIN)
 			{
 				struct XMPP_Client* client = (struct XMPP_Client*)events[i].data.ptr;
-				hdl_xmpp_data(client);
+				if(client->status)
+					hdl_xmpp_data(client);
+				else
+					disconnect_client(epoll_fd, client);
 			}
 
 			else if(events[i].events & (EPOLLERR | EPOLLHUP))
@@ -197,6 +205,7 @@ void hdl_xmpp_data(struct XMPP_Client *client)
 		ArenaClear(client->arena);
 		stack_len = ArenaGetPos(client->arena);
 	}
+
 	bytes_read = recv(client->fd, stack_memory + stack_len, stack_size - stack_len, 0);
 	if(bytes_read > 0)
 	{
@@ -209,17 +218,19 @@ void hdl_xmpp_data(struct XMPP_Client *client)
 			XML_ErrorString(XML_GetErrorCode(client->parser)));
 
 			disconnect_client(epoll_fd, client);
+			return;
 		}
 		
 		error =  XML_GetErrorCode(client->parser);
 		
-		if(error == XML_ERROR_NONE)
-		send_xml_response(client);
+		if(error == XML_ERROR_NONE && client->status)
+			send_xml_response(client);
 	}
 	else
 	{
 		disconnect_client(epoll_fd, client);
 	}
+	return;
 }
 
 int hdl_xml_element(struct XMPP_Client *client, const XML_Char *el_name, const XML_Char **atts)
@@ -279,9 +290,10 @@ int hdl_xml_element(struct XMPP_Client *client, const XML_Char *el_name, const X
 
 void disconnect_client(int fd, struct XMPP_Client *client)
 {
+	client->status = false;
 	err_conn("Client %d disconnected\n", client->fd);
 
-	epoll_ctl(fd, EPOLL_CTL_DEL, client->fd, NULL);
+	Epoll_ctl(fd, EPOLL_CTL_DEL, client->fd, NULL);
 	Close(client->fd);
 	XML_ParseBuffer(client->parser, 0, 1);
 	XML_ParserFree(client->parser);
@@ -295,6 +307,7 @@ void send_xml_response(struct XMPP_Client *client)
 	char *message;
 	int bytes_send;
 	size_t len;
+	int fd;
 	
 	client->message.body[client->message.body_len] = '\0';
 	bytes_send = 0;
@@ -330,22 +343,26 @@ void send_xml_response(struct XMPP_Client *client)
 			break;
 		default:
 			return;
-		}
-		
-		bytes_send = Send(client->fd, message, len);
-		free(message);
-		
-		if(bytes_send > 0)
-		{
-			ArenaClear(client->arena);
-			client->message.body_len = 0;
-		}
 	}
 
-	size_t get_response_len(const char *s, enum tag_type tag_type, struct XMPP_Client *client)
+	fd = get_fd_by_name(&pool, client->from);
+	
+	if(fd > 0)
+		bytes_send = Send(fd, message, len);
+	
+	free(message);
+	
+	if(bytes_send > 0)
 	{
-		int message_offset;
-		int stream_offset;
+		ArenaClear(client->arena);
+		client->message.body_len = 0;
+	}
+}
+
+size_t get_response_len(const char *s, enum tag_type tag_type, struct XMPP_Client *client)
+{
+	int message_offset;
+	int stream_offset;
 
 	stream_offset = 4;
 	message_offset = 6;
@@ -354,16 +371,16 @@ void send_xml_response(struct XMPP_Client *client)
 	{
 		case MESSAGE:
 			return strlen(s) + strlen(client->message.from) +
-			strlen(client->message.to) + strlen(client->message.msg_type) + client->message.body_len - message_offset;
+			strlen(client->message.to) + strlen(client->message.msg_type) + client->message.body_len - message_offset + 1;
 
 		case STREAM:
-			return strlen(s) + strlen(client->from) + strlen(client->to) - stream_offset;
+			return strlen(s) + strlen(client->from) + strlen(client->to) - stream_offset + 1;
 		default:
 			return 0;
 	}
 }
 
-int init_client(int client_fd, struct XMPP_Client *client)
+struct XMPP_Client* create_client(int client_fd, struct XMPP_Client *client)
 {
 
 	client = (struct XMPP_Client*)Calloc(1, sizeof(struct XMPP_Client));
@@ -373,7 +390,7 @@ int init_client(int client_fd, struct XMPP_Client *client)
 	if (!parser)
 	{
 		err_buf("Couldn't allocate memory for parser\n");
-		return -1;
+		return NULL;
 	}
 	client->parser = parser;
 
@@ -381,16 +398,37 @@ int init_client(int client_fd, struct XMPP_Client *client)
 	XML_SetCharacterDataHandler(client->parser, text_element);
 	XML_SetUserData(client->parser, client);
 	client->arena = ArenaAlloc(&pool);
+	ArenaSetExtra(client->arena, client);
 
-	ArenaPush(clients);
-	
-	return 0;
+	return client;
 }
 
-void create_stream_id(struct XMPP_Client *client, size_t len)
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
+// void create_stream_id(struct XMPP_Client *client, size_t len)
+// {
+// 	struct timespec ts;
+// 	clock_gettime(CLOCK_REALTIME, &ts);
 
-	snprintf(client->id, len, "%s_%ld%09ld", client->from, ts.tv_sec, ts.tv_nsec);
+// 	snprintf(client->id, len, "%s_%ld%09ld", client->from, ts.tv_sec, ts.tv_nsec);
+// }
+
+int get_fd_by_name(Pool *arena_pool, const char* name)
+{
+	Arena *arena;
+	arena = arena_pool->pages;
+	struct XMPP_Client *client = (struct XMPP_Client *)arena->extra;
+	if(strcmp(client->from, name) == 0)
+	{
+		return client->fd;
+	}
+	
+	while(arena->next != NULL)
+	{
+		arena = arena->next;
+		client = (struct XMPP_Client *)arena->extra;
+		if(strcmp(client->from, name) == 0)
+		{
+			return client->fd;
+		}
+	}
+	return -1;
 }

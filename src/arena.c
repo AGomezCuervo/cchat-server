@@ -10,18 +10,15 @@ Arena *ArenaAlloc(Pool *pool)
 	{
 		result = (Arena *)malloc(sizeof(Arena));
 		if(result == NULL)
-		{
 			err_sys("Cannot alloc memory for arena");
-		}
+		
 		result->next = NULL;
 		result->stack_memory == NULL;
 		result->stack_pos = 0;
 		int r = posix_memalign((void**)&(result->stack_memory), ALIGNMENT, HEAP_SIZE);
 
 		if(r != 0)
-		{
 			err_sys("Error allocating Arena");
-		}
 
 		if(pool->pages == NULL)
 		{
@@ -105,4 +102,9 @@ void ArenaSetPosBack(Arena *arena, uint64_t pos)
 {
 	assert(pos <= arena->stack_pos);
 	arena->stack_pos = pos;
+}
+
+void ArenaSetExtra(Arena *arena, void *data)
+{
+	arena->extra = data;
 }

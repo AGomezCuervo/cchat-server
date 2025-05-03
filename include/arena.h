@@ -4,10 +4,11 @@
 #include <assert.h>
 #include <stdint.h>
 
-typedef struct {
+typedef struct Arena {
 	struct Arena *next;
 	char *stack_memory;
 	uint64_t stack_pos;
+	void *extra;
 } Arena;
 
 typedef struct {
@@ -30,5 +31,6 @@ void ArenaPop(Arena *arena, uint64_t size);
 uint64_t ArenaGetPos(Arena *arena);
 void ArenaClear(Arena *arena);
 void ArenaSetPosBack(Arena *arena, uint64_t pos);
+void ArenaSetExtra(Arena *arena, void *data);
 
 #endif

@@ -12,6 +12,7 @@
 #include <stdarg.h>
 #include <sys/un.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -29,12 +30,6 @@ enum tag_type {
 	BODY,
 	ERROR,
 };
-
-struct Cnode {
-	struct cnode* next;
-	int name;
-	int fd;
-}
 
 struct XMPP_Message {
 	char from[MAX_VALUE];
@@ -59,8 +54,6 @@ struct XMPP_Client  {
 	struct XMPP_Message message;
 };
 
-
-void sig_child(int sig);
 void sig_exit(int sig);
 
 void err_doit(bool errnoflag, int level, const char *fmt, va_list ap);
@@ -74,6 +67,8 @@ int Bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int Socket(int domain, int type, int protocol);
 int Listen(int fd, int backlog);
 int EpollCreate(int flag);
+int Epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+
 void *Calloc(size_t nmemb, size_t size);
 int Accept(int fd, struct sockaddr *addr, socklen_t *len);
 int Close(int fd);
